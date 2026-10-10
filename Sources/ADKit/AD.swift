@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ADConfig: Codable, Hashable {
+public struct ADConfig: Codable, Hashable, Sendable {
     public var host: String
     public var port: Int
     public var user: String
@@ -132,7 +132,7 @@ public struct ADObject: Identifiable, Hashable {
 
 /// One live LDAPS session to a DC. Serialises all LDAP calls; reconnects once if AD dropped the idle connection.
 public actor ADDirectory {
-    public let config: ADConfig
+    public nonisolated let config: ADConfig
     public private(set) var info: DomainInfo!
     private let password: String
     private let verifyCertificate: Bool
