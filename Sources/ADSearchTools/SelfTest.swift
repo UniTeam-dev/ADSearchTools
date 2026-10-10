@@ -112,6 +112,9 @@ enum SelfTest {
             await settle(m)
             await snap(MainView().environmentObject(m), "\(dir)/10-group.png")
             await snap(ConnectView().environmentObject(AppModel()), "\(dir)/11-connect.png", size: CGSize(width: 520, height: 620))
+            m.query = "иван"
+            await settle(m)
+            await snap(MainView().environmentObject(m), "\(dir)/12-search-900.png", size: CGSize(width: 900, height: 600))
         }
 
         print(fails == 0 ? "SELFTEST OK" : "SELFTEST \(fails) FAILED")

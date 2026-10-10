@@ -211,6 +211,8 @@ struct StatusBadge: View {
             Label(text, systemImage: symbol(status))
                 .font(.caption.weight(.medium))
                 .labelStyle(.titleAndIcon)
+                .lineLimit(1)
+                .fixedSize() // the row's text truncates instead of the badge wrapping
                 .padding(.horizontal, 7).padding(.vertical, 2)
                 .foregroundStyle(color(status))
                 .background(color(status).opacity(0.15), in: Capsule())

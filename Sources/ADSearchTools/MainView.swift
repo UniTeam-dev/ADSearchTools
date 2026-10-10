@@ -3,19 +3,24 @@ import SwiftUI
 
 struct MainView: View {
     @EnvironmentObject var model: AppModel
+    @AppStorage("detailWidth") private var detailWidth = 420.0
 
     var body: some View {
         NavigationSplitView {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
         } detail: {
-            // macOS 13's NavigationSplitView can't hide a third column, so list + detail live in an HSplitView.
-            HSplitView {
-                ObjectListView()
-                    .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
-                if model.showDetail {
-                    DetailPanel()
-                        .frame(minWidth: 360, idealWidth: 440, maxWidth: 680, maxHeight: .infinity)
+            // macOS 13's NavigationSplitView can't hide a third column, so list + detail share the detail column.
+            // Plain SwiftUI layout (not HSplitView): NSSplitView ignored the minimums and pushed content off-window.
+            GeometryReader { geo in
+                let limits: ClosedRange<Double> = 320...max(320, min(680, Double(geo.size.width) - 300))
+                let w = min(max(detailWidth, limits.lowerBound), limits.upperBound)
+                HStack(spacing: 0) {
+                    ObjectListView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if model.showDetail {
+                        ResizeHandle(width: $detailWidth, current: w, limits: limits)
+                        DetailPanel().frame(width: w).frame(maxHeight: .infinity)
+                    }
                 }
             }
         }
@@ -65,6 +70,34 @@ struct MainView: View {
         case .disable(let o): o.count == 1 ? "Отключить «\(o[0].name)»?" : "Отключить \(Fmt.objects(o.count))?"
         case nil: ""
         }
+    }
+}
+
+/// 1 pt separator with a wider invisible grab area; dragging left widens the panel on its right.
+struct ResizeHandle: View {
+    @Binding var width: Double
+    let current: Double
+    let limits: ClosedRange<Double>
+    @State private var start: Double?
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+            .overlay(
+                Color.clear
+                    .frame(width: 9)
+                    .contentShape(Rectangle())
+                    .onHover { $0 ? NSCursor.resizeLeftRight.push() : NSCursor.pop() }
+                    .gesture(DragGesture(minimumDistance: 1)
+                        .onChanged { v in
+                            let base = start ?? current
+                            start = base
+                            width = min(max(base - v.translation.width, limits.lowerBound), limits.upperBound)
+                        }
+                        .onEnded { _ in start = nil })
+            )
+            .accessibilityHidden(true)
     }
 }
 
@@ -220,17 +253,32 @@ struct ObjectListView: View {
                 Spacer()
             }
             if showKindPicker {
-                Picker("Тип объектов", selection: $model.kind) {
-                    Text("Все").tag(KindFilter.all)
-                    Text("Люди").tag(KindFilter.people)
-                    Text("Группы").tag(KindFilter.groups)
-                    Text("Компьютеры").tag(KindFilter.computers)
+                // A segmented control never shrinks below its labels; in a narrow column fall back to icons.
+                ViewThatFits(in: .horizontal) {
+                    kindPicker(icons: false)
+                    kindPicker(icons: true)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14).padding(.vertical, 10)
+    }
+
+    private func kindPicker(icons: Bool) -> some View {
+        Picker("Тип объектов", selection: $model.kind) {
+            Text("Все").tag(KindFilter.all)
+            kindLabel("Люди", "person", icons).tag(KindFilter.people)
+            kindLabel("Группы", "person.2", icons).tag(KindFilter.groups)
+            kindLabel("Компьютеры", "desktopcomputer", icons).tag(KindFilter.computers)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private func kindLabel(_ title: String, _ icon: String, _ iconOnly: Bool) -> some View {
+        if iconOnly { Image(systemName: icon).help(title).accessibilityLabel(title) } else { Text(title) }
     }
 
     private var showKindPicker: Bool {
