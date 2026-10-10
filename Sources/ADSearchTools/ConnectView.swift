@@ -10,6 +10,7 @@ struct ConnectView: View {
     @AppStorage("remember") private var remember = true
     @State private var password = ""
     @State private var busy = false
+    @State private var progress = ""
     @State private var failure: Failure?
     @State private var advanced = false
     @State private var connectTask: Task<Void, Never>?
@@ -37,7 +38,7 @@ struct ConnectView: View {
             }
 
             Form {
-                TextField("Сервер", text: $host, prompt: Text("dc01.corp.local"))
+                TextField("Сервер или домен", text: $host, prompt: Text("corp.local или dc01.corp.local"))
                 TextField("Порт", value: $port, format: .number.grouping(.never))
                 TextField("Логин", text: $user, prompt: Text(verbatim: "user@corp.local или CORP\\user"))
                 SecureField("Пароль", text: $password)
@@ -66,7 +67,7 @@ struct ConnectView: View {
             HStack {
                 if busy {
                     ProgressView().controlSize(.small)
-                    Text("Подключение к \(host):\(String(port))…").font(.callout).foregroundStyle(.secondary)
+                    Text(progress).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
                 if busy { Button("Отменить") { connectTask?.cancel(); busy = false } }
@@ -102,9 +103,12 @@ struct ConnectView: View {
                 }
             }
         case .nameMismatch(let name):
-            ErrorBox(title: "Имя сервера не совпадает с сертификатом",
-                     message: "Сертификат выдан для «\(name)», а подключение идёт к «\(host)». Укажите в поле «Сервер» полное имя контроллера из сертификата (FQDN), а не IP-адрес или короткое имя.",
-                     technical: "TLS · hostname mismatch", symbol: "checkmark.shield")
+            VStack(alignment: .leading, spacing: 8) {
+                ErrorBox(title: "Имя сервера не совпадает с сертификатом",
+                         message: "Сертификат выдан для «\(name)», а подключение идёт к «\(host)». Укажите имя домена (контроллер найдётся сам) или полное имя контроллера из сертификата, а не IP-адрес или псевдоним балансировщика.",
+                         technical: "TLS · hostname mismatch", symbol: "checkmark.shield")
+                Button("Подключиться к \(name)") { host = name; connect() }
+            }
         case .trustFailed(let msg):
             ErrorBox(title: "Не удалось добавить сертификат", message: msg)
         }
@@ -126,16 +130,39 @@ struct ConnectView: View {
         let cfg = ADConfig(host: host.trimmingCharacters(in: .whitespaces), port: port, user: user.trimmingCharacters(in: .whitespaces))
         let pw = password
         connectTask = Task {
-            let d = ADDirectory(config: cfg, password: pw)
-            do {
-                let info = try await d.connect()
+            // A domain name resolves to its DCs via SRV, like Windows' DC locator: DC certificates carry only the
+            // DC's own name, so TLS verification passes against lon-dc-04.corp.com but never against corp.com.
+            progress = "Поиск контроллеров домена \(cfg.host)…"
+            let located = await Task.detached { DCLocator.controllers(for: cfg.host) }.value
+            // A bare login against a domain gets the domain as UPN suffix — AD rejects a bare sAMAccountName in a simple bind.
+            let bindUser = cfg.user.contains("@") || cfg.user.contains("\\") || located.isEmpty ? cfg.user : "\(cfg.user)@\(cfg.host)"
+            var lastDown: LDAPError?
+            // ponytail: no failover after connecting — if this DC dies mid-session, reconnect from this window.
+            for dc in located.isEmpty ? [cfg.host] : located {
                 guard !Task.isCancelled else { return }
-                if remember { Keychain.save(pw, for: account) } else { Keychain.delete(account) }
-                password = ""
-                busy = false
-                model.didConnect(d, info)
-            } catch let e as LDAPError where e.isServerDown {
-                let probe = await TLSProbe.run(host: cfg.host, port: cfg.port)
+                progress = "Подключение к \(dc):\(String(cfg.port))…"
+                let d = ADDirectory(config: ADConfig(host: dc, port: cfg.port, user: bindUser), password: pw)
+                do {
+                    let info = try await d.connect()
+                    guard !Task.isCancelled else { return }
+                    if remember { Keychain.save(pw, for: account) } else { Keychain.delete(account) }
+                    password = ""
+                    busy = false
+                    model.didConnect(d, info)
+                    return
+                } catch let e as LDAPError where e.isServerDown {
+                    lastDown = e // unreachable or TLS refused: try the next DC
+                } catch {
+                    // Wrong password and the like: stop here, every further DC would count another failed logon.
+                    guard !Task.isCancelled else { return }
+                    busy = false
+                    failure = .ldap(UIError("", error))
+                    return
+                }
+            }
+            if let e = lastDown {
+                let probeHost = located.first ?? cfg.host
+                let probe = await TLSProbe.run(host: probeHost, port: cfg.port)
                 guard !Task.isCancelled else { return }
                 busy = false
                 switch probe {
@@ -143,10 +170,6 @@ struct ConnectView: View {
                 case .nameMismatch(let name): failure = .nameMismatch(name)
                 case .unreachable, .trusted: failure = .unreachable(UIError("", e))
                 }
-            } catch {
-                guard !Task.isCancelled else { return }
-                busy = false
-                failure = .ldap(UIError("", error))
             }
         }
     }

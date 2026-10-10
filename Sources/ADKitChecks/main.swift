@@ -44,6 +44,18 @@ check(ADNames.initials("Иванов Пётр") == "ИП" && ADNames.initials("s
 check(ADErrorText.describe(code: 19, diagnostic: "0000052D: Constraint violation") == "Пароль не соответствует политике домена.", "error text policy")
 check(ADErrorText.describe(code: 49, diagnostic: "80090308: LdapErr: DSID-0C09044E, comment: AcceptSecurityContext error, data 775, v2580").contains("заблокирована"), "error text locked")
 
+// SRV parsing: priority 0, weight 100, port 389, target lon-dc-02.corp.com
+let srvData = Data([0, 0, 0, 100, 1, 0x85, 9] + Array("lon-dc-02".utf8) + [4] + Array("corp".utf8) + [3] + Array("com".utf8) + [0])
+let srv = DCLocator.parse(srvData)
+check(srv?.priority == 0 && srv?.weight == 100 && srv?.port == 389 && srv?.target == "lon-dc-02.corp.com", "srv parse")
+check(DCLocator.parse(Data([0, 0, 0])) == nil, "srv parse short")
+if let domain = ProcessInfo.processInfo.environment["AD_TEST_DOMAIN"] {
+    let dcs = DCLocator.controllers(for: domain)
+    print("DCs for \(domain):", dcs)
+    check(!dcs.isEmpty, "DC locator finds controllers")
+}
+check(DCLocator.controllers(for: "nonexistent.invalid", timeout: 2).isEmpty, "no SRV → empty")
+
 // Live DC
 if let host = ProcessInfo.processInfo.environment["AD_TEST_URL"] {
     let env = ProcessInfo.processInfo.environment
