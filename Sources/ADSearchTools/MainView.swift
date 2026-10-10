@@ -169,6 +169,10 @@ struct Sidebar: View {
                             Image(systemName: item.obj.kind == .ou ? "folder.fill" : "folder").foregroundStyle(Color.accentColor)
                         }
                         .tag(Place.container(item.obj.dn))
+                        .contextMenu {
+                            Button("Свойства") { model.open(item.obj.dn) }
+                            Button("Скопировать DN") { copyToPasteboard(item.obj.dn) }
+                        }
                         // Prefetch one level ahead so disclosure arrows are right before the user expands.
                         .onAppear { model.loadTree(item.obj.dn) }
                     }
@@ -248,6 +252,11 @@ struct ObjectListView: View {
             Text(crumbs).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(title).font(.title2.weight(.bold)).lineLimit(1)
+                if !model.isSearching, case .container(let dn) = model.place {
+                    Button { model.open(dn) } label: { Image(systemName: "info.circle") }
+                        .buttonStyle(.borderless)
+                        .help("Свойства «\(title)»")
+                }
                 Text(model.loading ? "Загрузка…" : countText).foregroundStyle(.secondary)
                 if model.loading { ProgressView().controlSize(.small) }
                 Spacer()

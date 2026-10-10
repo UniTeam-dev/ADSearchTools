@@ -70,7 +70,9 @@ final class AppModel: ObservableObject {
     var suppressAutoConnect = false
 
     // Navigation and list
-    @Published var place: Place? { didSet { if place != oldValue, place != nil { query = ""; selection = []; reload() } } }
+    @Published var place: Place? {
+        didSet { if place != oldValue, place != nil { query = ""; selection = []; openOverride = nil; detail = nil; reload() } }
+    }
     @Published var kind: KindFilter = .all { didSet { if kind != oldValue, !query.isEmpty { reload() } } }
     @Published var query = "" { didSet { if query != oldValue { scheduleSearch() } } }
     @Published private(set) var items: [ADObject] = []

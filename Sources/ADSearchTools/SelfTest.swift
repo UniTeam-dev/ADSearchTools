@@ -58,6 +58,10 @@ enum SelfTest {
         await settle(m)
         check(m.detail?.sam == "a.smirnova", "manager link opens detail")
 
+        m.open(it)
+        await settle(m)
+        check(m.detail?.kind == .ou && m.detail?.entry.data("objectGUID").flatMap(ADBinary.guid) != nil, "OU properties open with GUID")
+
         m.unlock([iv])
         await settle(m)
         check(m.toast == "Учётная запись разблокирована", "unlock toast: \(m.toast ?? "nil")")
@@ -112,6 +116,9 @@ enum SelfTest {
             await settle(m)
             await snap(MainView().environmentObject(m), "\(dir)/10-group.png")
             await snap(ConnectView().environmentObject(AppModel()), "\(dir)/11-connect.png", size: CGSize(width: 520, height: 620))
+            m.open(it)
+            await settle(m)
+            await snap(ObjectDetail(obj: m.detail!).environmentObject(m), "\(dir)/13-ou.png", size: CGSize(width: 460, height: 780))
             m.query = "иван"
             await settle(m)
             await snap(MainView().environmentObject(m), "\(dir)/12-search-900.png", size: CGSize(width: 900, height: 600))

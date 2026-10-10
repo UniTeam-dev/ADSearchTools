@@ -306,6 +306,12 @@ struct GeneralForm: View {
             EditableForm(obj: obj, sections: [
                 .init(obj.typeName, [.info("Имя", obj.rdnName), .edit("Описание", "description"),
                                      .info("Объектов внутри", count.map(String.init) ?? "…"), .info("Расположение", location)]),
+                .init("Объект", [
+                    .info("GUID", obj.entry.data("objectGUID").flatMap(ADBinary.guid) ?? "—"),
+                    .info("DN", obj.dn),
+                    .info("Создано", Fmt.date(obj.entry.string("whenCreated").flatMap(ADTime.date(generalized:)))),
+                    .info("Изменено", Fmt.date(obj.whenChanged)),
+                ]),
             ])
             .task(id: obj.dn) { count = try? await model.dir?.count(in: obj.dn) }
         }
